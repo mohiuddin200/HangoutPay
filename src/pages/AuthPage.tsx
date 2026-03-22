@@ -26,7 +26,7 @@ export function AuthPage() {
   const handleGoogleSignIn = async () => {
     setSigningIn(true);
     try {
-      await signIn("google");
+      await signIn("google", { redirectTo: window.location.origin });
     } catch {
       setSigningIn(false);
     }
