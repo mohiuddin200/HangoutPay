@@ -42,7 +42,7 @@ import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Separator } from "@/components/ui/separator";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useToast } from "@/components/ui/use-toast";
-import { formatBDT, toPaisa } from "@/lib/utils";
+import { formatBDT, toPaisa, toBDT } from "@/lib/utils";
 import {
   ArrowLeft,
   Plus,
@@ -56,6 +56,8 @@ import {
   Scale,
   Calendar,
   Loader2,
+  Pencil,
+  Trash2,
   X,
 } from "lucide-react";
 
@@ -189,6 +191,7 @@ export function TripPage() {
             members={trip.members}
             tripId={tripId as Id<"trips">}
             currentUserId={currentUser._id}
+            isAdmin={isAdmin}
           />
         </TabsContent>
 
@@ -333,14 +336,40 @@ function ExpensesTab({
   members,
   tripId,
   currentUserId,
+  isAdmin,
 }: {
   expenses: ExpenseItem[];
   members: TripMember[];
   tripId: Id<"trips">;
   currentUserId: Id<"users">;
+  isAdmin: boolean;
 }) {
+  const { toast } = useToast();
+  const deleteExpense = useMutation(api.expenses.softDelete);
   const [addOpen, setAddOpen] = useState(false);
   const [detailExpense, setDetailExpense] = useState<ExpenseItem | null>(null);
+  const [editExpense, setEditExpense] = useState<ExpenseItem | null>(null);
+  const [deleting, setDeleting] = useState(false);
+
+  const canModify = (expense: ExpenseItem) =>
+    isAdmin || expense.createdBy === currentUserId;
+
+  const handleDelete = async (expense: ExpenseItem) => {
+    setDeleting(true);
+    try {
+      await deleteExpense({ expenseId: expense._id });
+      toast({ title: "Expense deleted" });
+      setDetailExpense(null);
+    } catch (error) {
+      toast({
+        title: "Error",
+        description: error instanceof Error ? error.message : "Failed to delete",
+        variant: "destructive",
+      });
+    } finally {
+      setDeleting(false);
+    }
+  };
 
   return (
     <div className="space-y-3">
@@ -463,6 +492,39 @@ function ExpensesTab({
                   each
                 </p>
               </div>
+
+              {/* Edit & Delete Actions */}
+              {canModify(detailExpense) && (
+                <>
+                  <Separator />
+                  <div className="flex gap-2">
+                    <Button
+                      variant="outline"
+                      className="flex-1 gap-1"
+                      onClick={() => {
+                        setEditExpense(detailExpense);
+                        setDetailExpense(null);
+                      }}
+                    >
+                      <Pencil className="h-4 w-4" />
+                      Edit
+                    </Button>
+                    <Button
+                      variant="destructive"
+                      className="flex-1 gap-1"
+                      disabled={deleting}
+                      onClick={() => handleDelete(detailExpense)}
+                    >
+                      {deleting ? (
+                        <Loader2 className="h-4 w-4 animate-spin" />
+                      ) : (
+                        <Trash2 className="h-4 w-4" />
+                      )}
+                      Delete
+                    </Button>
+                  </div>
+                </>
+              )}
             </div>
           </DialogContent>
         )}
@@ -473,6 +535,14 @@ function ExpensesTab({
         open={addOpen}
         onOpenChange={setAddOpen}
         tripId={tripId}
+        members={members}
+        currentUserId={currentUserId}
+      />
+
+      {/* Edit Expense Dialog */}
+      <EditExpenseDialog
+        expense={editExpense}
+        onOpenChange={(open) => !open && setEditExpense(null)}
         members={members}
         currentUserId={currentUserId}
       />
@@ -861,6 +931,410 @@ function AddExpenseDialog({
           </DialogFooter>
         </form>
       </DialogContent>
+    </Dialog>
+  );
+}
+
+/* ──────────────────────── Edit Expense Dialog ──────────────────────── */
+
+function EditExpenseDialog({
+  expense,
+  onOpenChange,
+  members,
+  currentUserId,
+}: {
+  expense: ExpenseItem | null;
+  onOpenChange: (open: boolean) => void;
+  members: TripMember[];
+  currentUserId: Id<"users">;
+}) {
+  const { toast } = useToast();
+  const updateExpense = useMutation(api.expenses.update);
+
+  const [title, setTitle] = useState("");
+  const [amountStr, setAmountStr] = useState("");
+  const [category, setCategory] = useState("other");
+  const [splitPayment, setSplitPayment] = useState(false);
+  const [payers, setPayers] = useState<PayerEntry[]>([]);
+  const [participants, setParticipants] = useState<Set<string>>(new Set());
+  const [submitting, setSubmitting] = useState(false);
+  const [initialized, setInitialized] = useState(false);
+
+  // Pre-fill form when expense changes
+  if (expense && !initialized) {
+    setTitle(expense.title);
+    setAmountStr(toBDT(expense.amount).toString());
+    setCategory(expense.category);
+
+    const hasMultiplePayers = expense.payers.length > 1;
+    setSplitPayment(hasMultiplePayers);
+    setPayers(
+      expense.payers.map((p) => ({
+        userId: p.userId,
+        amount: toBDT(p.amount).toString(),
+      }))
+    );
+    setParticipants(new Set(expense.participants.map((p) => p.userId)));
+    setInitialized(true);
+  }
+
+  // Reset when dialog closes
+  const handleOpenChange = (open: boolean) => {
+    if (!open) {
+      setInitialized(false);
+    }
+    onOpenChange(open);
+  };
+
+  const totalAmountPaisa = amountStr ? toPaisa(parseFloat(amountStr) || 0) : 0;
+
+  const payerTotal = splitPayment
+    ? payers.reduce((sum, p) => sum + toPaisa(parseFloat(p.amount) || 0), 0)
+    : totalAmountPaisa;
+
+  const payerSumValid = payerTotal === totalAmountPaisa && totalAmountPaisa > 0;
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!expense || !title.trim() || totalAmountPaisa <= 0 || participants.size === 0)
+      return;
+
+    const payersList = splitPayment
+      ? payers
+          .filter((p) => p.userId && parseFloat(p.amount) > 0)
+          .map((p) => ({
+            userId: p.userId as Id<"users">,
+            amount: toPaisa(parseFloat(p.amount)),
+          }))
+      : [{ userId: currentUserId, amount: totalAmountPaisa }];
+
+    const payerSum = payersList.reduce((s, p) => s + p.amount, 0);
+    if (payerSum !== totalAmountPaisa) {
+      toast({
+        title: "Payer amounts mismatch",
+        description: "The sum of payer amounts must equal the total amount.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    setSubmitting(true);
+    try {
+      await updateExpense({
+        expenseId: expense._id,
+        title: title.trim(),
+        amount: totalAmountPaisa,
+        category,
+        payers: payersList,
+        participants: Array.from(participants) as Id<"users">[],
+      });
+      toast({ title: "Expense updated" });
+      setInitialized(false);
+      onOpenChange(false);
+    } catch (error) {
+      toast({
+        title: "Error",
+        description:
+          error instanceof Error ? error.message : "Failed to update expense",
+        variant: "destructive",
+      });
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  const addPayer = () => {
+    setPayers((prev) => [...prev, { userId: "", amount: "" }]);
+  };
+
+  const removePayer = (index: number) => {
+    setPayers((prev) => prev.filter((_, i) => i !== index));
+  };
+
+  const updatePayer = (
+    index: number,
+    field: "userId" | "amount",
+    value: string
+  ) => {
+    setPayers((prev) =>
+      prev.map((p, i) =>
+        i === index
+          ? {
+              ...p,
+              [field]:
+                field === "userId" ? (value as Id<"users">) : value,
+            }
+          : p
+      )
+    );
+  };
+
+  const toggleParticipant = (userId: string) => {
+    setParticipants((prev) => {
+      const next = new Set(prev);
+      if (next.has(userId)) {
+        next.delete(userId);
+      } else {
+        next.add(userId);
+      }
+      return next;
+    });
+  };
+
+  return (
+    <Dialog open={expense !== null} onOpenChange={handleOpenChange}>
+      {expense && (
+        <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-md">
+          <form onSubmit={handleSubmit}>
+            <DialogHeader>
+              <DialogTitle>Edit Expense</DialogTitle>
+              <DialogDescription>
+                Modify the expense details. All balances will recalculate
+                automatically.
+              </DialogDescription>
+            </DialogHeader>
+
+            <div className="space-y-5 py-4">
+              {/* Title */}
+              <div className="space-y-2">
+                <Label htmlFor="edit-title">Title</Label>
+                <Input
+                  id="edit-title"
+                  placeholder="e.g., Dinner at restaurant"
+                  value={title}
+                  onChange={(e) => setTitle(e.target.value)}
+                  autoFocus
+                />
+              </div>
+
+              {/* Amount */}
+              <div className="space-y-2">
+                <Label htmlFor="edit-amount">Amount (BDT)</Label>
+                <div className="relative">
+                  <span className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground">
+                    ৳
+                  </span>
+                  <Input
+                    id="edit-amount"
+                    type="number"
+                    step="0.01"
+                    min="0"
+                    placeholder="0.00"
+                    value={amountStr}
+                    onChange={(e) => setAmountStr(e.target.value)}
+                    className="pl-7"
+                  />
+                </div>
+              </div>
+
+              {/* Category */}
+              <div className="space-y-2">
+                <Label>Category</Label>
+                <Select value={category} onValueChange={setCategory}>
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {CATEGORIES.map((cat) => (
+                      <SelectItem key={cat.value} value={cat.value}>
+                        {cat.label}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+
+              <Separator />
+
+              {/* Payers */}
+              <div className="space-y-3">
+                <div className="flex items-center justify-between">
+                  <Label>Who paid?</Label>
+                  <label className="flex cursor-pointer items-center gap-2 text-xs">
+                    <Checkbox
+                      checked={splitPayment}
+                      onCheckedChange={(c) => {
+                        setSplitPayment(!!c);
+                        if (!c) {
+                          setPayers([
+                            {
+                              userId: currentUserId,
+                              amount: amountStr,
+                            },
+                          ]);
+                        }
+                      }}
+                    />
+                    Split payment
+                  </label>
+                </div>
+
+                {!splitPayment ? (
+                  <p className="text-sm text-muted-foreground">
+                    {members.find((m) => m.userId === (payers[0]?.userId || currentUserId))
+                      ?.user?.name ?? "You"}{" "}
+                    paid the full amount.
+                  </p>
+                ) : (
+                  <div className="space-y-2">
+                    {payers.map((payer, index) => (
+                      <div key={index} className="flex items-center gap-2">
+                        <Select
+                          value={payer.userId as string}
+                          onValueChange={(v) =>
+                            updatePayer(index, "userId", v)
+                          }
+                        >
+                          <SelectTrigger className="flex-1">
+                            <SelectValue placeholder="Select member" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {members.map((m) => (
+                              <SelectItem key={m.userId} value={m.userId}>
+                                {m.user?.name ?? "Unknown"}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                        <div className="relative w-28">
+                          <span className="absolute left-2 top-1/2 -translate-y-1/2 text-xs text-muted-foreground">
+                            ৳
+                          </span>
+                          <Input
+                            type="number"
+                            step="0.01"
+                            min="0"
+                            placeholder="0.00"
+                            value={payer.amount}
+                            onChange={(e) =>
+                              updatePayer(index, "amount", e.target.value)
+                            }
+                            className="pl-5 text-sm"
+                          />
+                        </div>
+                        {payers.length > 1 && (
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            size="icon"
+                            className="h-8 w-8 shrink-0"
+                            onClick={() => removePayer(index)}
+                          >
+                            <X className="h-4 w-4" />
+                          </Button>
+                        )}
+                      </div>
+                    ))}
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      className="gap-1"
+                      onClick={addPayer}
+                    >
+                      <Plus className="h-3 w-3" />
+                      Add Payer
+                    </Button>
+                    {totalAmountPaisa > 0 && !payerSumValid && (
+                      <p className="text-xs text-destructive">
+                        Payer amounts ({formatBDT(payerTotal)}) must equal total
+                        ({formatBDT(totalAmountPaisa)})
+                      </p>
+                    )}
+                  </div>
+                )}
+              </div>
+
+              <Separator />
+
+              {/* Participants */}
+              <div className="space-y-3">
+                <div className="flex items-center justify-between">
+                  <Label>Split between</Label>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    className="h-auto px-2 py-1 text-xs"
+                    onClick={() =>
+                      setParticipants(
+                        new Set(members.map((m) => m.userId))
+                      )
+                    }
+                  >
+                    Select All
+                  </Button>
+                </div>
+                <div className="space-y-2">
+                  {members.map((member) => (
+                    <label
+                      key={member.userId}
+                      className="flex cursor-pointer items-center gap-3 rounded-md border p-2.5 transition-colors hover:bg-accent/50"
+                    >
+                      <Checkbox
+                        checked={participants.has(member.userId)}
+                        onCheckedChange={() =>
+                          toggleParticipant(member.userId)
+                        }
+                      />
+                      <Avatar className="h-7 w-7">
+                        <AvatarImage src={member.user?.image} />
+                        <AvatarFallback className="text-xs">
+                          {getInitials(member.user?.name ?? "?")}
+                        </AvatarFallback>
+                      </Avatar>
+                      <span className="text-sm">
+                        {member.user?.name ?? "Unknown"}
+                      </span>
+                    </label>
+                  ))}
+                </div>
+                {participants.size > 0 && totalAmountPaisa > 0 && (
+                  <p className="text-xs text-muted-foreground">
+                    Equal split:{" "}
+                    {formatBDT(
+                      Math.round(totalAmountPaisa / participants.size)
+                    )}{" "}
+                    each
+                  </p>
+                )}
+                {participants.size === 0 && (
+                  <p className="text-xs text-destructive">
+                    Select at least one participant
+                  </p>
+                )}
+              </div>
+            </div>
+
+            <DialogFooter>
+              <DialogClose asChild>
+                <Button type="button" variant="outline">
+                  Cancel
+                </Button>
+              </DialogClose>
+              <Button
+                type="submit"
+                disabled={
+                  !title.trim() ||
+                  totalAmountPaisa <= 0 ||
+                  participants.size === 0 ||
+                  (splitPayment && !payerSumValid) ||
+                  submitting
+                }
+              >
+                {submitting ? (
+                  <>
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                    Saving...
+                  </>
+                ) : (
+                  "Save Changes"
+                )}
+              </Button>
+            </DialogFooter>
+          </form>
+        </DialogContent>
+      )}
     </Dialog>
   );
 }
