@@ -1,5 +1,5 @@
 import { useState, useMemo } from "react";
-import { useParams, Link } from "react-router-dom";
+import { useParams, Link, useNavigate } from "react-router-dom";
 import { useQuery, useMutation } from "convex/react";
 import { api } from "../../convex/_generated/api";
 import type { Id } from "../../convex/_generated/dataModel";
@@ -72,13 +72,13 @@ const CATEGORIES = [
 ] as const;
 
 const CATEGORY_COLORS: Record<string, string> = {
-  food: "bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-400",
-  transport: "bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400",
-  accommodation: "bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-400",
-  entertainment: "bg-pink-100 text-pink-700 dark:bg-pink-900/30 dark:text-pink-400",
-  shopping: "bg-yellow-100 text-yellow-700 dark:bg-yellow-900/30 dark:text-yellow-400",
-  utilities: "bg-gray-100 text-gray-700 dark:bg-gray-900/30 dark:text-gray-400",
-  other: "bg-slate-100 text-slate-700 dark:bg-slate-900/30 dark:text-slate-400",
+  food: "bg-orange-100 text-orange-600 font-semibold dark:bg-orange-500/20 dark:text-orange-400",
+  transport: "bg-blue-100 text-blue-600 font-semibold dark:bg-blue-500/20 dark:text-blue-400",
+  accommodation: "bg-purple-100 text-purple-600 font-semibold dark:bg-purple-500/20 dark:text-purple-400",
+  entertainment: "bg-pink-100 text-pink-600 font-semibold dark:bg-pink-500/20 dark:text-pink-400",
+  shopping: "bg-amber-100 text-amber-600 font-semibold dark:bg-amber-500/20 dark:text-amber-400",
+  utilities: "bg-zinc-200 text-zinc-600 font-semibold dark:bg-zinc-500/20 dark:text-zinc-400",
+  other: "bg-slate-200 text-slate-600 font-semibold dark:bg-slate-500/20 dark:text-slate-400",
 };
 
 function getInitials(name: string) {
@@ -133,10 +133,10 @@ export function TripPage() {
     <div className="flex flex-col pb-24">
       {/* Header */}
       <div className="sticky top-0 z-10 border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
-        <div className="flex items-center gap-3 px-4 py-3">
+        <div className="flex items-center gap-3 px-4 py-2">
           <Link to="/">
-            <Button variant="ghost" size="icon" className="shrink-0">
-              <ArrowLeft className="h-5 w-5" />
+            <Button variant="outline" size="icon" className="shrink-0 h-8 w-8">
+              <ArrowLeft className="h-4 w-4" />
             </Button>
           </Link>
           <div className="min-w-0 flex-1">
@@ -159,8 +159,8 @@ export function TripPage() {
 
       {/* Tabs */}
       <Tabs defaultValue="expenses" className="flex-1">
-        <div className="border-b px-4">
-          <TabsList className="w-full justify-start gap-2 bg-transparent p-0">
+        <div>
+          <TabsList className="w-full justify-start gap-2 bg-transparent px-4 p-0">
             <TabsTrigger
               value="expenses"
               className="gap-1 data-[state=active]:border-b-2 data-[state=active]:border-primary data-[state=active]:shadow-none rounded-none"
@@ -227,12 +227,16 @@ function TripSettingsMenu({
   tripName: string;
   tripDescription?: string;
 }) {
+  const navigate = useNavigate();
   const { toast } = useToast();
   const updateTrip = useMutation(api.trips.update);
+  const deleteTrip = useMutation(api.trips.remove);
   const [editOpen, setEditOpen] = useState(false);
+  const [deleteOpen, setDeleteOpen] = useState(false);
   const [name, setName] = useState(tripName);
   const [description, setDescription] = useState(tripDescription ?? "");
   const [saving, setSaving] = useState(false);
+  const [deleting, setDeleting] = useState(false);
 
   const handleSave = async () => {
     if (!name.trim()) return;
@@ -256,6 +260,23 @@ function TripSettingsMenu({
     }
   };
 
+  const handleDelete = async () => {
+    setDeleting(true);
+    try {
+      await deleteTrip({ tripId });
+      toast({ title: "Trip deleted" });
+      navigate("/");
+    } catch (error) {
+      toast({
+        title: "Error",
+        description: error instanceof Error ? error.message : "Failed to delete trip",
+        variant: "destructive",
+      });
+    } finally {
+      setDeleting(false);
+    }
+  };
+
   return (
     <>
       <DropdownMenu>
@@ -268,6 +289,13 @@ function TripSettingsMenu({
           <DropdownMenuItem onClick={() => setEditOpen(true)}>
             <Settings className="mr-2 h-4 w-4" />
             Edit Trip
+          </DropdownMenuItem>
+          <DropdownMenuItem
+            onClick={() => setDeleteOpen(true)}
+            className="text-red-600 focus:text-red-600"
+          >
+            <Trash2 className="mr-2 h-4 w-4" />
+            Delete Trip
           </DropdownMenuItem>
         </DropdownMenuContent>
       </DropdownMenu>
@@ -294,6 +322,28 @@ function TripSettingsMenu({
           <DialogFooter>
             <Button onClick={handleSave} disabled={!name.trim() || saving}>
               {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : "Save"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={deleteOpen} onOpenChange={setDeleteOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Delete Trip</DialogTitle>
+            <DialogDescription>
+              Are you sure you want to delete "{tripName}"? This will permanently
+              remove all expenses, settlements, and members. This action cannot be
+              undone.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter className="gap-2 sm:gap-0">
+            <Button variant="outline" onClick={() => setDeleteOpen(false)} disabled={deleting}>
+              Cancel
+            </Button>
+            <Button variant="destructive" onClick={handleDelete} disabled={deleting}>
+              {deleting ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Trash2 className="mr-2 h-4 w-4" />}
+              Delete
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -1523,10 +1573,10 @@ function MembersTab({
 
   return (
     <div className="space-y-4">
-      <div className="space-y-2">
-        {members.map((member) => (
-          <Card key={member._id}>
-            <CardContent className="flex items-center gap-3 p-4">
+      <Card>
+        <CardContent className="divide-y p-0">
+          {members.map((member) => (
+            <div key={member._id} className="flex items-center gap-3 px-4 py-3">
               <Avatar className="h-9 w-9">
                 <AvatarImage src={member.user?.image} />
                 <AvatarFallback className="text-xs">
@@ -1563,10 +1613,10 @@ function MembersTab({
                   )}
                 </Button>
               )}
-            </CardContent>
-          </Card>
-        ))}
-      </div>
+            </div>
+          ))}
+        </CardContent>
+      </Card>
 
       {isAdmin && (
         <div className="flex gap-2">

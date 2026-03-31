@@ -6,12 +6,6 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardTitle,
-} from "@/components/ui/card";
-import {
   Dialog,
   DialogContent,
   DialogDescription,
@@ -73,43 +67,35 @@ export function DashboardPage() {
   const isLoading = trips === undefined;
 
   return (
-    <div className="space-y-6 px-4 py-6">
+    <div className="space-y-8 px-4 py-6">
       {/* Balance Summary */}
-      <div className="grid grid-cols-2 gap-3">
-        <Card>
-          <CardContent className="flex items-center gap-3 p-4">
-            <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-red-100 dark:bg-red-900/30">
-              <TrendingDown className="h-5 w-5 text-red-600 dark:text-red-400" />
-            </div>
-            <div className="min-w-0">
-              <p className="text-xs text-muted-foreground">You owe</p>
-              {summary === undefined ? (
-                <Skeleton className="mt-1 h-5 w-16" />
-              ) : (
-                <p className="truncate text-lg font-semibold text-red-600 dark:text-red-400">
-                  {formatBDT(summary.totalOwed)}
-                </p>
-              )}
-            </div>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardContent className="flex items-center gap-3 p-4">
-            <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-green-100 dark:bg-green-900/30">
-              <TrendingUp className="h-5 w-5 text-green-600 dark:text-green-400" />
-            </div>
-            <div className="min-w-0">
-              <p className="text-xs text-muted-foreground">You are owed</p>
-              {summary === undefined ? (
-                <Skeleton className="mt-1 h-5 w-16" />
-              ) : (
-                <p className="truncate text-lg font-semibold text-green-600 dark:text-green-400">
-                  {formatBDT(summary.totalReceivable)}
-                </p>
-              )}
-            </div>
-          </CardContent>
-        </Card>
+      <div className="grid grid-cols-2 gap-4">
+        <div className="rounded-2xl bg-red-500 p-4 shadow-md dark:bg-red-600">
+          <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-red-100">
+            <TrendingDown className="h-4 w-4" />
+            You Owe
+          </div>
+          {summary === undefined ? (
+            <Skeleton className="mt-3 h-8 w-24 bg-red-400/40" />
+          ) : (
+            <p className="mt-2 break-all text-2xl font-bold text-white">
+              {formatBDT(summary.totalOwed)}
+            </p>
+          )}
+        </div>
+        <div className="rounded-2xl bg-emerald-500 p-4 shadow-md dark:bg-emerald-600">
+          <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-emerald-100">
+            <TrendingUp className="h-4 w-4" />
+            You're Owed
+          </div>
+          {summary === undefined ? (
+            <Skeleton className="mt-3 h-8 w-24 bg-emerald-400/40" />
+          ) : (
+            <p className="mt-2 break-all text-2xl font-bold text-white">
+              {formatBDT(summary.totalReceivable)}
+            </p>
+          )}
+        </div>
       </div>
 
       {/* Header + Create */}
@@ -117,9 +103,9 @@ export function DashboardPage() {
         <h1 className="text-2xl font-bold">Your Trips</h1>
         <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
           <DialogTrigger asChild>
-            <Button size="sm" className="gap-1">
+            <Button size="sm" className="gap-1.5 rounded-full px-4">
               <Plus className="h-4 w-4" />
-              Create Trip
+              New Trip
             </Button>
           </DialogTrigger>
           <DialogContent>
@@ -170,63 +156,57 @@ export function DashboardPage() {
 
       {/* Trip List */}
       {isLoading ? (
-        <div className="space-y-3">
+        <div className="space-y-4">
           {Array.from({ length: 3 }).map((_, i) => (
-            <Card key={i}>
-              <CardContent className="p-4">
-                <div className="flex items-center justify-between">
-                  <div className="space-y-2">
-                    <Skeleton className="h-5 w-40" />
-                    <Skeleton className="h-4 w-24" />
-                  </div>
-                  <Skeleton className="h-5 w-5 rounded" />
+            <div key={i} className="rounded-2xl border p-5">
+              <div className="flex items-center justify-between">
+                <div className="space-y-2.5">
+                  <Skeleton className="h-5 w-40" />
+                  <Skeleton className="h-4 w-28" />
                 </div>
-              </CardContent>
-            </Card>
+                <Skeleton className="h-5 w-5 rounded" />
+              </div>
+            </div>
           ))}
         </div>
       ) : trips.length === 0 ? (
-        <Card>
-          <CardContent className="flex flex-col items-center justify-center py-12 text-center">
-            <div className="mb-4 flex h-16 w-16 items-center justify-center rounded-full bg-muted">
-              <Map className="h-8 w-8 text-muted-foreground" />
-            </div>
-            <CardTitle className="mb-2 text-lg">No trips yet</CardTitle>
-            <CardDescription className="mb-4 max-w-xs">
-              Create your first trip to start splitting expenses with friends.
-            </CardDescription>
-            <Button size="sm" onClick={() => setDialogOpen(true)} className="gap-1">
-              <Plus className="h-4 w-4" />
-              Create Your First Trip
-            </Button>
-          </CardContent>
-        </Card>
+        <div className="flex flex-col items-center justify-center rounded-2xl border border-dashed py-16 text-center">
+          <div className="mb-4 flex h-16 w-16 items-center justify-center rounded-full bg-muted">
+            <Map className="h-8 w-8 text-muted-foreground" />
+          </div>
+          <p className="mb-1 text-lg font-semibold">No trips yet</p>
+          <p className="mb-5 max-w-xs text-sm text-muted-foreground">
+            Create your first trip to start splitting expenses with friends.
+          </p>
+          <Button size="sm" onClick={() => setDialogOpen(true)} className="gap-1.5 rounded-full px-4">
+            <Plus className="h-4 w-4" />
+            Create Your First Trip
+          </Button>
+        </div>
       ) : (
-        <div className="space-y-3">
+        <div className="flex flex-col gap-3">
           {trips.map((trip) => (
-            <Link key={trip._id} to={`/trip/${trip._id}`}>
-              <Card className="transition-colors hover:bg-accent/50">
-                <CardContent className="flex items-center justify-between p-4">
-                  <div className="min-w-0 space-y-1">
-                    <p className="truncate font-medium">{trip.name}</p>
-                    <div className="flex items-center gap-3 text-xs text-muted-foreground">
-                      <span className="flex items-center gap-1">
-                        <Users className="h-3 w-3" />
-                        {trip.memberCount} {trip.memberCount === 1 ? "member" : "members"}
-                      </span>
-                      <span className="flex items-center gap-1">
-                        <Calendar className="h-3 w-3" />
-                        {new Date(trip.createdAt).toLocaleDateString("en-GB", {
-                          day: "numeric",
-                          month: "short",
-                          year: "numeric",
-                        })}
-                      </span>
-                    </div>
+            <Link key={trip._id} to={`/trip/${trip._id}`} className="group block">
+              <div className="flex items-center justify-between rounded-2xl border bg-card p-5 transition-all hover:border-foreground/20 hover:shadow-sm">
+                <div className="min-w-0 space-y-1.5">
+                  <p className="truncate text-base font-semibold">{trip.name}</p>
+                  <div className="flex items-center gap-3 text-xs text-muted-foreground">
+                    <span className="flex items-center gap-1">
+                      <Users className="h-3.5 w-3.5" />
+                      {trip.memberCount} {trip.memberCount === 1 ? "member" : "members"}
+                    </span>
+                    <span className="flex items-center gap-1">
+                      <Calendar className="h-3.5 w-3.5" />
+                      {new Date(trip.createdAt).toLocaleDateString("en-GB", {
+                        day: "numeric",
+                        month: "short",
+                        year: "numeric",
+                      })}
+                    </span>
                   </div>
-                  <ChevronRight className="h-5 w-5 shrink-0 text-muted-foreground" />
-                </CardContent>
-              </Card>
+                </div>
+                <ChevronRight className="h-5 w-5 shrink-0 text-muted-foreground transition-transform group-hover:translate-x-0.5" />
+              </div>
             </Link>
           ))}
         </div>
