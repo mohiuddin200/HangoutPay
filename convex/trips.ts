@@ -150,6 +150,78 @@ export const get = query({
   },
 });
 
+export const remove = mutation({
+  args: {
+    tripId: v.id("trips"),
+  },
+  handler: async (ctx, args) => {
+    const userId = await getAuthUserId(ctx);
+    if (userId === null) {
+      throw new Error("Not authenticated");
+    }
+
+    await assertTripAdmin(ctx, args.tripId, userId);
+
+    // Delete all expenses and related records
+    const expenses = await ctx.db
+      .query("expenses")
+      .withIndex("by_tripId", (q) => q.eq("tripId", args.tripId))
+      .collect();
+
+    for (const expense of expenses) {
+      const payers = await ctx.db
+        .query("expensePayers")
+        .withIndex("by_expenseId", (q) => q.eq("expenseId", expense._id))
+        .collect();
+      for (const payer of payers) {
+        await ctx.db.delete(payer._id);
+      }
+
+      const participants = await ctx.db
+        .query("expenseParticipants")
+        .withIndex("by_expenseId", (q) => q.eq("expenseId", expense._id))
+        .collect();
+      for (const participant of participants) {
+        await ctx.db.delete(participant._id);
+      }
+
+      await ctx.db.delete(expense._id);
+    }
+
+    // Delete all settlements
+    const settlements = await ctx.db
+      .query("settlements")
+      .withIndex("by_tripId", (q) => q.eq("tripId", args.tripId))
+      .collect();
+    for (const settlement of settlements) {
+      await ctx.db.delete(settlement._id);
+    }
+
+    // Delete all audit logs
+    const auditLogs = await ctx.db
+      .query("auditLogs")
+      .withIndex("by_tripId", (q) => q.eq("tripId", args.tripId))
+      .collect();
+    for (const log of auditLogs) {
+      await ctx.db.delete(log._id);
+    }
+
+    // Delete all members
+    const members = await ctx.db
+      .query("members")
+      .withIndex("by_tripId", (q) => q.eq("tripId", args.tripId))
+      .collect();
+    for (const member of members) {
+      await ctx.db.delete(member._id);
+    }
+
+    // Delete the trip itself
+    await ctx.db.delete(args.tripId);
+
+    return { success: true };
+  },
+});
+
 export const update = mutation({
   args: {
     tripId: v.id("trips"),
